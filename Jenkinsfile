@@ -36,8 +36,8 @@ pipeline {
                             hexdump -C src/predict.py | head -n 20 || true
 
                             echo "🧼 Auto-cleaning null bytes if any"
-                            tr < src/predict.py -d '\\000' > clean_predict.py
-                            mv clean_predict.py src/predict.py
+                            cat src/predict.py | tr -d '\000' | tee src/predict.py > /dev/null
+
                         '''
                     }
                 }
