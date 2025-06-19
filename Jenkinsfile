@@ -19,6 +19,9 @@ pipeline {
             }
         }
 
+    name: Fix broken __init__.py
+      run: echo "# This file marks src as a Python package" > src/__init__.py
+
         stage('Model Validation') {
             steps {
                 script {
