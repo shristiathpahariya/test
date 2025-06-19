@@ -91,7 +91,7 @@ jobs:
         import pickle
         import pandas as pd
         from sklearn.metrics import accuracy_score, classification_report
-        from src.predict import predict_sentiment
+        from src.predict import predict_sentiment, load_model
         
         model = load_model('model/model.pkl')
         vectorizer = load_model('model/vectorizer.pkl')
