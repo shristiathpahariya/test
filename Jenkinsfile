@@ -25,7 +25,7 @@ pipeline {
                     docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
                         sh '''
                             pip install joblib scikit-learn
-                            
+
                             # Create validation script
                             cat > validate_model.py << 'EOF'
 import joblib
@@ -44,15 +44,15 @@ if not os.path.exists('model/vectorizer.pkl'):
 try:
     # Try to import and test the prediction function
     from src.predict import load_model, predict_sentiment
-    
+
     model = load_model('model/model.pkl')
     vectorizer = load_model('model/vectorizer.pkl')
-    
+
     texts = ['I love this!', 'This is terrible']
     for text in texts:
         prediction = predict_sentiment(model, vectorizer, text)
         print(f'Text: {text} -> Prediction: {prediction}')
-    
+
     print('Validation passed!')
 except ImportError as e:
     print(f'Warning: Could not import prediction modules - {e}')
@@ -61,7 +61,7 @@ except Exception as e:
     print(f'Error during validation: {e}')
     raise
 EOF
-                            
+
                             python validate_model.py
                         '''
                     }
@@ -78,7 +78,7 @@ EOF
                     docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
                         sh '''
                             pip install joblib scikit-learn
-                            
+
                             # Create performance test script
                             cat > performance_test.py << 'EOF'
 import time
@@ -87,25 +87,24 @@ sys.path.append('/workspace')
 
 try:
     from src.predict import predict_sentiment, load_model
-    
+
     model = load_model('model/model.pkl')
     vectorizer = load_model('model/vectorizer.pkl')
-    
+
     test_texts = ['Great product!'] * 50
-    
+
     start_time = time.time()
     for text in test_texts:
         predict_sentiment(model, vectorizer, text)
     end_time = time.time()
-    
+
     avg_time = (end_time - start_time) / len(test_texts)
     print(f'Average prediction time: {avg_time:.4f}s')
-    
+
     if avg_time >= 0.2:
         print(f'Warning: Performance is slower than expected: {avg_time}s')
     else:
         print('Performance test passed!')
-        
 except ImportError as e:
     print(f'Warning: Could not import prediction modules - {e}')
     print('Skipping performance test')
@@ -113,7 +112,7 @@ except Exception as e:
     print(f'Error during performance test: {e}')
     print('Continuing with deployment...')
 EOF
-                            
+
                             python performance_test.py
                         '''
                     }
@@ -201,12 +200,10 @@ EOF
         }
         cleanup {
             script {
-                node {
-                    sh '''
-                        docker stop sentiment-staging-${BUILD_NUMBER} || true
-                        docker rm sentiment-staging-${BUILD_NUMBER} || true
-                    '''
-                }
+                sh '''
+                    docker stop sentiment-staging-${BUILD_NUMBER} || true
+                    docker rm sentiment-staging-${BUILD_NUMBER} || true
+                '''
             }
         }
     }
