@@ -119,12 +119,7 @@ EOF
             }
             steps {
                 sh '''
-                    docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 shedocks/sentiment-analyzer:${MODEL_VERSION}
-                    sleep 10
-                    docker exec sentiment-staging-${BUILD_NUMBER} python3 -c "
-                    from src.predict import predict_sentiment, load_model; model = load_model('model/model.pkl'); 
-                    vectorizer = load_model('model/vectorizer.pkl'); 
-                    print('Health check:', predict_sentiment(model, vectorizer, 'test'))"
+                    docker exec sentiment-staging-${BUILD_NUMBER} python3 -c "from src.predict import predict_sentiment, load_model; model = load_model('model/model.pkl'); vectorizer = load_model('model/vectorizer.pkl'); print('Health check:', predict_sentiment(model, vectorizer, 'test'))"
                 '''
             }
         }
