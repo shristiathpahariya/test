@@ -4,6 +4,8 @@ pipeline {
     environment {
         DOCKER_REGISTRY = credentials('shristi')
         MODEL_BUCKET = 's3://your-model-bucket'
+        VENV_DIR = 'venv'
+        PYTHON = './venv/bin/python'
     }
 
     parameters {
@@ -19,27 +21,29 @@ pipeline {
             }
         }
 
-    stage('Install pip3') {
-    steps {
-        sh '''
-            apt-get update
-            apt-get install -y python3-pip
-        '''
-    }
-}
+        stage('Install pip & venv') {
+            steps {
+                sh '''
+                    apt-get update
+                    apt-get install -y python3-venv python3-pip
+                '''
+            }
+        }
 
-
-    stage('Install Dependencies') {
-    steps {
-        sh 'pip3 install -r requirements.txt'
-    }
-}
+        stage('Set up Virtual Environment') {
+            steps {
+                sh '''
+                    python3 -m venv venv
+                    ./venv/bin/pip install --upgrade pip
+                    ./venv/bin/pip install -r requirements.txt
+                '''
+            }
+        }
 
         stage('Model Validation') {
             steps {
-                script {
-                    sh '''
-                        python3 -c "
+                sh '''
+                    ./venv/bin/python -c "
 import joblib
 import os
 from src.predict import load_model, predict_sentiment
@@ -56,9 +60,8 @@ for text in test_texts:
     print(f'Text: {text} -> Prediction: {prediction}')
 
 print('Validation passed!')
-                        "
-                    '''
-                }
+                    "
+                '''
             }
         }
 
@@ -67,9 +70,8 @@ print('Validation passed!')
                 expression { params.RUN_PERFORMANCE_TEST }
             }
             steps {
-                script {
-                    sh '''
-                        python3 -c "
+                sh '''
+                    ./venv/bin/python -c "
 import time
 from src.predict import predict_sentiment, load_model
 
@@ -86,9 +88,8 @@ end_time = time.time()
 avg_time = (end_time - start_time) / len(test_texts)
 print(f'Average prediction time: {avg_time:.4f}s')
 assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
-                        "
-                    '''
-                }
+                    "
+                '''
             }
         }
 
@@ -109,13 +110,16 @@ assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
                 expression { params.ENVIRONMENT == 'staging' }
             }
             steps {
-                script {
-                    sh '''
-docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 sentiment-analyzer:${MODEL_VERSION}
-sleep 10
-docker exec sentiment-staging-${BUILD_NUMBER} python3 -c "from src.predict import predict_sentiment; print('Health check:', predict_sentiment('test'))"
-                    '''
-                }
+                sh '''
+                    docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 sentiment-analyzer:${MODEL_VERSION}
+                    sleep 10
+                    docker exec sentiment-staging-${BUILD_NUMBER} ./venv/bin/python -c "
+from src.predict import predict_sentiment, load_model
+model = load_model('model/model.pkl')
+vectorizer = load_model('model/vectorizer.pkl')
+print('Health check:', predict_sentiment(model, vectorizer, 'test'))
+                    "
+                '''
             }
         }
 
@@ -124,23 +128,21 @@ docker exec sentiment-staging-${BUILD_NUMBER} python3 -c "from src.predict impor
                 expression { params.ENVIRONMENT == 'production' }
             }
             steps {
-                script {
-                    sh '''
-docker stop sentiment-production || true
-docker rm sentiment-production || true
+                sh '''
+                    docker stop sentiment-production || true
+                    docker rm sentiment-production || true
 
-docker run -d --name sentiment-production --restart unless-stopped -p 8000:8000 sentiment-analyzer:${MODEL_VERSION}
-sleep 15
+                    docker run -d --name sentiment-production --restart unless-stopped -p 8000:8000 sentiment-analyzer:${MODEL_VERSION}
+                    sleep 15
 
-docker exec sentiment-production python3 -c "
+                    docker exec sentiment-production ./venv/bin/python -c "
 from src.predict import predict_sentiment, load_model
 model = load_model('model/model.pkl')
 vectorizer = load_model('model/vectorizer.pkl')
 result = predict_sentiment(model, vectorizer, 'Amazing service!')
 print('Production health check:', result)
-"
-                    '''
-                }
+                    "
+                '''
             }
         }
     }
@@ -154,8 +156,8 @@ print('Production health check:', result)
         }
         cleanup {
             sh '''
-docker stop sentiment-staging-${BUILD_NUMBER} || true
-docker rm sentiment-staging-${BUILD_NUMBER} || true
+                docker stop sentiment-staging-${BUILD_NUMBER} || true
+                docker rm sentiment-staging-${BUILD_NUMBER} || true
             '''
         }
     }
