@@ -4,6 +4,8 @@ pipeline {
     environment {
         DOCKER_REGISTRY = credentials('shristi')
         MODEL_BUCKET = 's3://your-model-bucket'
+        VENV_DIR = 'venv'
+        PYTHON = './venv/bin/python'
     }
 
     parameters {
@@ -19,130 +21,108 @@ pipeline {
             }
         }
 
-        stage('Debug Shell') {
+        stage('Check src/__init__.py for Null Bytes') {
+    steps {
+        sh '''
+            cat > check_null_bytes.py <<EOF
+with open('src/__init__.py', 'rb') as f:
+    content = f.read()
+
+if b'\\x00' in content:
+    print('Null byte found in src/__init__.py')
+else:
+    print('No null bytes found')
+EOF
+
+            python3 check_null_bytes.py
+        '''
+    }
+}
+
+
+        stage('Install pip & venv') {
             steps {
-                script {
-                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
-                        sh '''
-                            apt-get update && apt-get install -y file bsdmainutils
+                sh '''
+                    apt-get update
+                    apt-get install -y python3-venv python3-pip
+                '''
+            }
+        }
 
-                            echo "🔍 Listing files in src/"
-                            ls -la src/
-
-                            echo "🔍 Checking file encoding:"
-                            file src/predict.py || true
-
-                            echo "🔍 Dumping hex of predict.py (first 20 lines):"
-                            hexdump -C src/predict.py | head -n 20 || true
-
-                            echo "🧼 Auto-cleaning null bytes if any"
-                            cat src/predict.py | tr -d '\000' | tee src/predict.py > /dev/null
-
-                        '''
-                    }
-                }
+        stage('Set up Virtual Environment') {
+            steps {
+                sh '''
+                    python3 -m venv venv
+                    ./venv/bin/pip install --upgrade pip
+                    ./venv/bin/pip install -r requirements.txt
+                '''
             }
         }
 
         stage('Model Validation') {
-            steps {
-                script {
-                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
-                        sh '''
-                            pip install joblib scikit-learn
-
-                            echo "
+    steps {
+        sh '''
+            cat > validate.py <<EOF
 import joblib
 import os
-import sys
-sys.path.append('/workspace')
+from src.predict import load_model, predict_sentiment
 
-if not os.path.exists('model/model.pkl'):
-    print('Warning: Model file model/model.pkl not found, skipping validation')
-    exit(0)
-if not os.path.exists('model/vectorizer.pkl'):
-    print('Warning: Vectorizer file model/vectorizer.pkl not found, skipping validation')
-    exit(0)
+assert os.path.exists('model/model.pkl'), 'Model file missing'
+assert os.path.exists('model/vectorizer.pkl'), 'Vectorizer file missing'
 
-try:
-    from src.predict import load_model, predict_sentiment
-    model = load_model('model/model.pkl')
-    vectorizer = load_model('model/vectorizer.pkl')
-    texts = ['I love this!', 'This is terrible']
-    for text in texts:
-        prediction = predict_sentiment(model, vectorizer, text)
-        print(f'Text: {text} -> Prediction: {prediction}')
-    print('Validation passed!')
-except ImportError as e:
-    print(f'Warning: Could not import prediction modules - {e}')
-    print('Skipping model validation')
-except Exception as e:
-    print(f'Error during validation: {e}')
-    raise
-" | tee validate_model.py
+model = load_model('model/model.pkl')
+vectorizer = load_model('model/vectorizer.pkl')
 
-                            python validate_model.py
-                        '''
-                    }
-                }
-            }
-        }
+test_texts = ['I love this!', 'This is terrible']
+for text in test_texts:
+    prediction = predict_sentiment(model, vectorizer, text)
+    print(f'Text: {text} -> Prediction: {prediction}')
+
+print('Validation passed!')
+EOF
+
+            ./venv/bin/python validate.py
+        '''
+    }
+}
+
 
         stage('Performance Testing') {
-            when {
-                expression { params.RUN_PERFORMANCE_TEST }
-            }
-            steps {
-                script {
-                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
-                        sh '''
-                            pip install joblib scikit-learn
-
-                            echo "
+    when {
+        expression { params.RUN_PERFORMANCE_TEST }
+    }
+    steps {
+        sh '''
+            cat > performance_test.py <<EOF
 import time
-import sys
-sys.path.append('/workspace')
+from src.predict import predict_sentiment, load_model
 
-try:
-    from src.predict import predict_sentiment, load_model
+model = load_model('model/model.pkl')
+vectorizer = load_model('model/vectorizer.pkl')
 
-    model = load_model('model/model.pkl')
-    vectorizer = load_model('model/vectorizer.pkl')
+test_texts = ['Great product!'] * 50
 
-    test_texts = ['Great product!'] * 50
+start_time = time.time()
+for text in test_texts:
+    predict_sentiment(model, vectorizer, text)
+end_time = time.time()
 
-    start_time = time.time()
-    for text in test_texts:
-        predict_sentiment(model, vectorizer, text)
-    end_time = time.time()
+avg_time = (end_time - start_time) / len(test_texts)
+print(f'Average prediction time: {avg_time:.4f}s')
+assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
+EOF
 
-    avg_time = (end_time - start_time) / len(test_texts)
-    print(f'Average prediction time: {avg_time:.4f}s')
+            ./venv/bin/python performance_test.py
+        '''
+    }
+}
 
-    if avg_time >= 0.2:
-        print(f'Warning: Performance is slower than expected: {avg_time}s')
-    else:
-        print('Performance test passed!')
-except ImportError as e:
-    print(f'Warning: Could not import prediction modules - {e}')
-    print('Skipping performance test')
-except Exception as e:
-    print(f'Error during performance test: {e}')
-    print('Continuing with deployment...')
-" | tee performance_test.py
-
-                            python performance_test.py
-                        '''
-                    }
-                }
-            }
-        }
 
         stage('Build Docker Image') {
             steps {
                 script {
                     def image = docker.build("sentiment-analyzer:${params.MODEL_VERSION}")
-                    docker.withRegistry('https://registry.hub.docker.com', 'shristi') {
+                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
                         image.push("${params.MODEL_VERSION}")
                         image.push("latest")
                     }
@@ -155,23 +135,16 @@ except Exception as e:
                 expression { params.ENVIRONMENT == 'staging' }
             }
             steps {
-                script {
-                    sh '''
-                        docker run -d --name sentiment-staging-${BUILD_NUMBER} \
-                            -p 8001:8000 \
-                            sentiment-analyzer:${MODEL_VERSION}
-
-                        sleep 10
-
-                        if docker ps | grep -q sentiment-staging-${BUILD_NUMBER}; then
-                            echo "✅ Staging container is running successfully"
-                            docker exec sentiment-staging-${BUILD_NUMBER} python -c "print('Container health check passed')" || echo "Warning: Python health check failed but container is running"
-                        else
-                            echo "❌ Staging container failed to start"
-                            exit 1
-                        fi
-                    '''
-                }
+                sh '''
+                    docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 sentiment-analyzer:${MODEL_VERSION}
+                    sleep 10
+                    docker exec sentiment-staging-${BUILD_NUMBER} ./venv/bin/python -c "
+from src.predict import predict_sentiment, load_model
+model = load_model('model/model.pkl')
+vectorizer = load_model('model/vectorizer.pkl')
+print('Health check:', predict_sentiment(model, vectorizer, 'test'))
+                    "
+                '''
             }
         }
 
@@ -180,45 +153,37 @@ except Exception as e:
                 expression { params.ENVIRONMENT == 'production' }
             }
             steps {
-                script {
-                    sh '''
-                        docker stop sentiment-production || true
-                        docker rm sentiment-production || true
+                sh '''
+                    docker stop sentiment-production || true
+                    docker rm sentiment-production || true
 
-                        docker run -d --name sentiment-production \
-                            --restart unless-stopped \
-                            -p 8000:8000 \
-                            sentiment-analyzer:${MODEL_VERSION}
+                    docker run -d --name sentiment-production --restart unless-stopped -p 8000:8000 sentiment-analyzer:${MODEL_VERSION}
+                    sleep 15
 
-                        sleep 15
-
-                        if docker ps | grep -q sentiment-production; then
-                            echo "✅ Production container is running successfully"
-                            docker exec sentiment-production python -c "print('Production health check passed')" || echo "Warning: Python health check failed but container is running"
-                        else
-                            echo "❌ Production container failed to start"
-                            exit 1
-                        fi
-                    '''
-                }
+                    docker exec sentiment-production ./venv/bin/python -c "
+from src.predict import predict_sentiment, load_model
+model = load_model('model/model.pkl')
+vectorizer = load_model('model/vectorizer.pkl')
+result = predict_sentiment(model, vectorizer, 'Amazing service!')
+print('Production health check:', result)
+                    "
+                '''
             }
         }
     }
 
     post {
         success {
-            echo "✅ Sentiment Model Deployment Succeeded - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}"
+            echo "✅ Sentiment Model Deployed Successfully: Environment=${params.ENVIRONMENT}, Version=${params.MODEL_VERSION}, Build=${BUILD_NUMBER}"
         }
         failure {
-            echo "❌ Sentiment Model Deployment Failed - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}. Check build logs for details."
+            echo "❌ Sentiment Model Deployment Failed: Environment=${params.ENVIRONMENT}, Build=${BUILD_NUMBER}. See ${BUILD_URL}"
         }
         cleanup {
-            script {
-                sh '''
-                    docker stop sentiment-staging-${BUILD_NUMBER} || true
-                    docker rm sentiment-staging-${BUILD_NUMBER} || true
-                '''
-            }
+            sh '''
+                docker stop sentiment-staging-${BUILD_NUMBER} || true
+                docker rm sentiment-staging-${BUILD_NUMBER} || true
+            '''
         }
     }
 }
