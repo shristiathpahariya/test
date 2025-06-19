@@ -100,16 +100,18 @@ EOF
 
 
         stage('Build Docker Image') {
-            steps {
-                script {
-                    docker.build("shedocks/sentiment-analyzer:${params.MODEL_VERSION}")
-                    docker.withRegistry('https://index.docker.io/v1/', 'shristi') {
-                        image.push("${params.MODEL_VERSION}")
-                        image.push("latest")
-                    }
-                }
+    steps {
+        script {
+            def imageName = "shedocks/sentiment-analyzer"
+            def image = docker.build("${imageName}:${params.MODEL_VERSION}")
+
+            docker.withRegistry('https://index.docker.io/v1/', 'shristi') {
+                image.push("${params.MODEL_VERSION}")
+                image.push("latest")
             }
         }
+    }
+}
 
         stage('Deploy to Staging') {
             when {
@@ -117,7 +119,7 @@ EOF
             }
             steps {
                 sh '''
-                    docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 sentiment-analyzer:${MODEL_VERSION}
+                    docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 shedocks/sentiment-analyzer:${MODEL_VERSION}
                     sleep 10
                     docker exec sentiment-staging-${BUILD_NUMBER} ./venv/bin/python -c "
 from src.predict import predict_sentiment, load_model
