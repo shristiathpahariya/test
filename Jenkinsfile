@@ -142,10 +142,12 @@ assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
         }
         cleanup {
             script {
-                sh '''
-                    docker stop sentiment-staging-${BUILD_NUMBER} || true
-                    docker rm sentiment-staging-${BUILD_NUMBER} || true
-                '''
+                node {
+                    sh '''
+                        docker stop sentiment-staging-${BUILD_NUMBER} || true
+                        docker rm sentiment-staging-${BUILD_NUMBER} || true
+                    '''
+                }
             }
         }
     }
