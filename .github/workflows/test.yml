@@ -105,7 +105,7 @@ jobs:
         ]
         expected = ['positive', 'negative', 'neutral', 'positive']
         
-        predictions = [predict_sentiment(text) for text in test_texts]
+        predictions = [predict_sentiment(model, vectorizer, text) for text in test_texts]
         print('Test predictions:', predictions)
         
         # Basic sanity checks
