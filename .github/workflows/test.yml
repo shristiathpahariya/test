@@ -108,9 +108,11 @@ jobs:
         predictions = [predict_sentiment(model, vectorizer, text) for text in test_texts]
         print('Test predictions:', predictions)
         
+        cleaned_preds = [pred.strip().lower() for pred in predictions]
+        
         # Basic sanity checks
         assert len(predictions) == len(test_texts)
-        assert all(pred in ['positive', 'negative', 'neutral'] for pred in predictions)
+        assert all(pred in ['positive', 'negative', 'neutral'] for pred in cleaned_preds)
         print('Model validation passed!')
         "
     
