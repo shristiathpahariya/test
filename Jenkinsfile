@@ -52,7 +52,7 @@ pipeline {
         
         stage('Performance Testing') {
             when {
-                params.RUN_PERFORMANCE_TEST == true
+                expression { params.RUN_PERFORMANCE_TEST == true }
             }
             steps {
                 script {
@@ -98,7 +98,7 @@ pipeline {
         
         stage('Deploy to Staging') {
             when {
-                params.ENVIRONMENT == 'staging'
+                expression { params.ENVIRONMENT == 'staging' }
             }
             steps {
                 script {
@@ -121,11 +121,10 @@ pipeline {
         
         stage('Deploy to Production') {
             when {
-                params.ENVIRONMENT == 'production'
+                expression { params.ENVIRONMENT == 'production' }
             }
             steps {
                 script {
-                    // Blue-green deployment
                     sh '''
                         # Stop old container if exists
                         docker stop sentiment-production || true
