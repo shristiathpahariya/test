@@ -19,68 +19,12 @@ pipeline {
             }
         }
 
-        stage('Debug Shell') {
-            steps {
-                script {
-                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
-                        sh '''
-                            apt-get update && apt-get install -y file bsdmainutils
-
-                            echo "🔍 Listing files in src/"
-                            ls -la src/
-
-                            echo "🔍 Checking file encoding:"
-                            file src/predict.py || true
-
-                            echo "🔍 Dumping hex of predict.py (first 20 lines):"
-                            hexdump -C src/predict.py | head -n 20 || true
-
-                            echo "🧼 Auto-cleaning null bytes if any"
-                            cat src/predict.py | tr -d '\000' | tee src/predict.py > /dev/null
-
-                        '''
-                    }
-                }
-            }
-        }
-
         stage('Model Validation') {
             steps {
                 script {
                     docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
                         sh '''
                             pip install joblib scikit-learn
-
-                            echo "
-import joblib
-import os
-import sys
-sys.path.append('/workspace')
-
-if not os.path.exists('model/model.pkl'):
-    print('Warning: Model file model/model.pkl not found, skipping validation')
-    exit(0)
-if not os.path.exists('model/vectorizer.pkl'):
-    print('Warning: Vectorizer file model/vectorizer.pkl not found, skipping validation')
-    exit(0)
-
-try:
-    from src.predict import load_model, predict_sentiment
-    model = load_model('model/model.pkl')
-    vectorizer = load_model('model/vectorizer.pkl')
-    texts = ['I love this!', 'This is terrible']
-    for text in texts:
-        prediction = predict_sentiment(model, vectorizer, text)
-        print(f'Text: {text} -> Prediction: {prediction}')
-    print('Validation passed!')
-except ImportError as e:
-    print(f'Warning: Could not import prediction modules - {e}')
-    print('Skipping model validation')
-except Exception as e:
-    print(f'Error during validation: {e}')
-    raise
-" | tee validate_model.py
-
                             python validate_model.py
                         '''
                     }
@@ -98,7 +42,7 @@ except Exception as e:
                         sh '''
                             pip install joblib scikit-learn
 
-                            echo "
+                            cat > performance_test.py << 'EOF'
 import time
 import sys
 sys.path.append('/workspace')
@@ -129,7 +73,7 @@ except ImportError as e:
 except Exception as e:
     print(f'Error during performance test: {e}')
     print('Continuing with deployment...')
-" | tee performance_test.py
+EOF
 
                             python performance_test.py
                         '''
@@ -214,11 +158,6 @@ except Exception as e:
         }
         cleanup {
             script {
-                sh '''
-                    docker stop sentiment-staging-${BUILD_NUMBER} || true
-                    docker rm sentiment-staging-${BUILD_NUMBER} || true
-                '''
-            }
-        }
-    }
-}
+                node {
+                    sh '''
+                        docker stop senti
