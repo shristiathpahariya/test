@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_REGISTRY = credentials('docker-registry')
         MODEL_BUCKET = 's3://your-model-bucket'
-        SLACK_CHANNEL = '#ml-alerts'
+        SLACK_CHANNEL = '#ml-alerts'  // You can remove this if unused
     }
     
     parameters {
@@ -29,15 +29,12 @@ pipeline {
                         import os
                         from src.predict import load_model, predict_sentiment
                         
-                        # Validate model files exist
                         assert os.path.exists('model/model.pkl'), 'Model file missing'
                         assert os.path.exists('model/vectorizer.pkl'), 'Vectorizer file missing'
                         
-                        # Load and test model
                         model = load_model('model/model.pkl')
                         vectorizer = load_model('model/vectorizer.pkl')
                         
-                        # Quick prediction test
                         test_texts = ['I love this!', 'This is terrible']
                         for text in test_texts:
                             prediction = predict_sentiment(model, vectorizer, text)
@@ -61,12 +58,10 @@ pipeline {
                         import time
                         from src.predict import predict_sentiment, load_model
                         
-                        # Load models
                         model = load_model('model/model.pkl')
                         vectorizer = load_model('model/vectorizer.pkl')
                         
-                        # Performance test
-                        test_texts = ['Great product!'] * 50  # Reduced for CI/CD speed
+                        test_texts = ['Great product!'] * 50
                         
                         start_time = time.time()
                         for text in test_texts:
@@ -76,7 +71,6 @@ pipeline {
                         avg_time = (end_time - start_time) / len(test_texts)
                         print(f'Average prediction time: {avg_time:.4f}s')
                         
-                        # Assert performance threshold
                         assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
                         "
                     '''
@@ -103,17 +97,9 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Deploy to staging environment
-                        docker run -d --name sentiment-staging-${BUILD_NUMBER} \
-                            -p 8001:8000 \
-                            sentiment-analyzer:${MODEL_VERSION}
-                        
-                        # Wait for service to be ready
+                        docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 sentiment-analyzer:${MODEL_VERSION}
                         sleep 10
-                        
-                        # Basic health check
-                        docker exec sentiment-staging-${BUILD_NUMBER} \
-                            python -c "from src.predict import predict_sentiment; print('Health check:', predict_sentiment('test'))"
+                        docker exec sentiment-staging-${BUILD_NUMBER} python -c "from src.predict import predict_sentiment; print('Health check:', predict_sentiment('test'))"
                     '''
                 }
             }
@@ -126,26 +112,17 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        # Stop old container if exists
                         docker stop sentiment-production || true
                         docker rm sentiment-production || true
-                        
-                        # Start new container
-                        docker run -d --name sentiment-production \
-                            --restart unless-stopped \
-                            -p 8000:8000 \
-                            sentiment-analyzer:${MODEL_VERSION}
-                        
-                        # Health check
+                        docker run -d --name sentiment-production --restart unless-stopped -p 8000:8000 sentiment-analyzer:${MODEL_VERSION}
                         sleep 15
-                        docker exec sentiment-production \
-                            python -c "
-                            from src.predict import predict_sentiment, load_model
-                            model = load_model('model/model.pkl')
-                            vectorizer = load_model('model/vectorizer.pkl')
-                            result = predict_sentiment(model, vectorizer, 'Amazing service!')
-                            print('Production health check:', result)
-                            "
+                        docker exec sentiment-production python -c "
+                        from src.predict import predict_sentiment, load_model
+                        model = load_model('model/model.pkl')
+                        vectorizer = load_model('model/vectorizer.pkl')
+                        result = predict_sentiment(model, vectorizer, 'Amazing service!')
+                        print('Production health check:', result)
+                        "
                     '''
                 }
             }
@@ -154,27 +131,12 @@ pipeline {
     
     post {
         success {
-            slackSend(
-                channel: env.SLACK_CHANNEL,
-                color: 'good',
-                message: "✅ Sentiment Model Deployed Successfully\n" +
-                        "Environment: ${params.ENVIRONMENT}\n" +
-                        "Version: ${params.MODEL_VERSION}\n" +
-                        "Build: ${BUILD_NUMBER}"
-            )
+            echo "✅ Sentiment Model Deployed Successfully - Environment: ${params.ENVIRONMENT}, Version: ${params.MODEL_VERSION}, Build: ${BUILD_NUMBER}"
         }
         failure {
-            slackSend(
-                channel: env.SLACK_CHANNEL,
-                color: 'danger',
-                message: "❌ Sentiment Model Deployment Failed\n" +
-                        "Environment: ${params.ENVIRONMENT}\n" +
-                        "Build: ${BUILD_NUMBER}\n" +
-                        "Check: ${BUILD_URL}"
-            )
+            echo "❌ Sentiment Model Deployment Failed - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}. Check build logs for details."
         }
         cleanup {
-            // Clean up staging containers
             sh '''
                 docker stop sentiment-staging-${BUILD_NUMBER} || true
                 docker rm sentiment-staging-${BUILD_NUMBER} || true
