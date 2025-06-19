@@ -21,6 +21,25 @@ pipeline {
             }
         }
 
+        stage('Check src/predict.py for Null Bytes') {
+    steps {
+        sh '''
+            cat > check_null_bytes.py <<EOF
+with open('src/predict.py', 'rb') as f:
+    content = f.read()
+
+if b'\\x00' in content:
+    print('Null byte found in src/predict.py')
+else:
+    print('No null bytes found')
+EOF
+
+            python3 check_null_bytes.py
+        '''
+    }
+}
+
+
         stage('Install pip & venv') {
             steps {
                 sh '''
