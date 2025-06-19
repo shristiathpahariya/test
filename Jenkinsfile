@@ -134,14 +134,15 @@ assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
     }
 
     post {
-        success {
-            echo "✅ Sentiment Model Deployment Succeeded - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}"
-        }
-        failure {
-            echo "❌ Sentiment Model Deployment Failed - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}. Check build logs for details."
-        }
-        cleanup {
-            script {
+    success {
+        echo "✅ Sentiment Model Deployment Succeeded - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}"
+    }
+    failure {
+        echo "❌ Sentiment Model Deployment Failed - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}. Check build logs for details."
+    }
+    cleanup {
+        script {
+            node {
                 sh '''
                     docker stop sentiment-staging-${BUILD_NUMBER} || true
                     docker rm sentiment-staging-${BUILD_NUMBER} || true
@@ -150,3 +151,4 @@ assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
         }
     }
 }
+
