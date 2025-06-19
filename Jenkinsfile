@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = credentials('docker-registry')
+        DOCKER_REGISTRY = credentials('shristi')
         MODEL_BUCKET = 's3://your-model-bucket'
     }
 
@@ -80,7 +80,7 @@ assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
             steps {
                 script {
                     def image = docker.build("sentiment-analyzer:${params.MODEL_VERSION}")
-                    docker.withRegistry('https://registry.hub.docker.com', 'shristi') {
+                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
                         image.push("${params.MODEL_VERSION}")
                         image.push("latest")
                     }
