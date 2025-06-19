@@ -26,14 +26,12 @@ pipeline {
                         sh '''
                             pip install joblib scikit-learn
 
-                            # Create validation script
-                            cat > validate_model.py << 'EOF'
+                            echo "
 import joblib
 import os
 import sys
 sys.path.append('/workspace')
 
-# Check if model files exist
 if not os.path.exists('model/model.pkl'):
     print('Warning: Model file model/model.pkl not found, skipping validation')
     exit(0)
@@ -42,17 +40,13 @@ if not os.path.exists('model/vectorizer.pkl'):
     exit(0)
 
 try:
-    # Try to import and test the prediction function
     from src.predict import load_model, predict_sentiment
-
     model = load_model('model/model.pkl')
     vectorizer = load_model('model/vectorizer.pkl')
-
     texts = ['I love this!', 'This is terrible']
     for text in texts:
         prediction = predict_sentiment(model, vectorizer, text)
         print(f'Text: {text} -> Prediction: {prediction}')
-
     print('Validation passed!')
 except ImportError as e:
     print(f'Warning: Could not import prediction modules - {e}')
@@ -60,7 +54,7 @@ except ImportError as e:
 except Exception as e:
     print(f'Error during validation: {e}')
     raise
-EOF
+" | tee validate_model.py
 
                             python validate_model.py
                         '''
@@ -79,8 +73,7 @@ EOF
                         sh '''
                             pip install joblib scikit-learn
 
-                            # Create performance test script
-                            cat > performance_test.py << 'EOF'
+                            echo "
 import time
 import sys
 sys.path.append('/workspace')
@@ -111,7 +104,7 @@ except ImportError as e:
 except Exception as e:
     print(f'Error during performance test: {e}')
     print('Continuing with deployment...')
-EOF
+" | tee performance_test.py
 
                             python performance_test.py
                         '''
@@ -145,10 +138,8 @@ EOF
 
                         sleep 10
 
-                        # Simple health check - test if container is running
                         if docker ps | grep -q sentiment-staging-${BUILD_NUMBER}; then
                             echo "✅ Staging container is running successfully"
-                            # Try to execute health check inside container
                             docker exec sentiment-staging-${BUILD_NUMBER} python -c "print('Container health check passed')" || echo "Warning: Python health check failed but container is running"
                         else
                             echo "❌ Staging container failed to start"
@@ -176,10 +167,8 @@ EOF
 
                         sleep 15
 
-                        # Simple health check - test if container is running
                         if docker ps | grep -q sentiment-production; then
                             echo "✅ Production container is running successfully"
-                            # Try to execute health check inside container
                             docker exec sentiment-production python -c "print('Production health check passed')" || echo "Warning: Python health check failed but container is running"
                         else
                             echo "❌ Production container failed to start"
