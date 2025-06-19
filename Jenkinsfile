@@ -41,9 +41,9 @@ pipeline {
         }
 
         stage('Model Validation') {
-            steps {
-                sh '''
-                    ./venv/bin/python -c "
+    steps {
+        sh '''
+            cat > validate.py <<EOF
 import joblib
 import os
 from src.predict import load_model, predict_sentiment
@@ -60,18 +60,21 @@ for text in test_texts:
     print(f'Text: {text} -> Prediction: {prediction}')
 
 print('Validation passed!')
-                    "
-                '''
-            }
-        }
+EOF
+
+            ./venv/bin/python validate.py
+        '''
+    }
+}
+
 
         stage('Performance Testing') {
-            when {
-                expression { params.RUN_PERFORMANCE_TEST }
-            }
-            steps {
-                sh '''
-                    ./venv/bin/python -c "
+    when {
+        expression { params.RUN_PERFORMANCE_TEST }
+    }
+    steps {
+        sh '''
+            cat > performance_test.py <<EOF
 import time
 from src.predict import predict_sentiment, load_model
 
@@ -88,10 +91,13 @@ end_time = time.time()
 avg_time = (end_time - start_time) / len(test_texts)
 print(f'Average prediction time: {avg_time:.4f}s')
 assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
-                    "
-                '''
-            }
-        }
+EOF
+
+            ./venv/bin/python performance_test.py
+        '''
+    }
+}
+
 
         stage('Build Docker Image') {
             steps {
