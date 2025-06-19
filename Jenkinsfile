@@ -142,17 +142,6 @@ EOF
        }
 
 
-from src.predict import predict_sentiment, load_model
-model = load_model('model/model.pkl')
-vectorizer = load_model('model/vectorizer.pkl')
-result = predict_sentiment(model, vectorizer, 'Amazing service!')
-print('Production health check:', result)
-                    "
-                '''
-            }
-        }
-    }
-
     post {
         success {
             echo "✅ Sentiment Model Deployed Successfully: Environment=${params.ENVIRONMENT}, Version=${params.MODEL_VERSION}, Build=${BUILD_NUMBER}"
