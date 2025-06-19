@@ -103,7 +103,7 @@ EOF
             steps {
                 script {
                     def image = docker.build("sentiment-analyzer:${params.MODEL_VERSION}")
-                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
+                    docker.withRegistry('https://registry.hub.docker.com', 'shristi') {
                         image.push("${params.MODEL_VERSION}")
                         image.push("latest")
                     }
