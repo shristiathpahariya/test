@@ -19,17 +19,17 @@ pipeline {
             }
         }
 
-    name: Fix broken __init__.py
-      run: echo "# This file marks src as a Python package" > src/__init__.py
-
         stage('Model Validation') {
             steps {
                 script {
                     docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
                         sh '''
                             pip install joblib scikit-learn
-                            python -c "
-import joblib, os
+                            
+                            # Create validation script
+                            cat > validate_model.py << 'EOF'
+import joblib
+import os
 import sys
 sys.path.append('/workspace')
 
@@ -60,7 +60,9 @@ except ImportError as e:
 except Exception as e:
     print(f'Error during validation: {e}')
     raise
-                            "
+EOF
+                            
+                            python validate_model.py
                         '''
                     }
                 }
@@ -76,7 +78,9 @@ except Exception as e:
                     docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
                         sh '''
                             pip install joblib scikit-learn
-                            python -c "
+                            
+                            # Create performance test script
+                            cat > performance_test.py << 'EOF'
 import time
 import sys
 sys.path.append('/workspace')
@@ -107,9 +111,10 @@ except ImportError as e:
     print('Skipping performance test')
 except Exception as e:
     print(f'Error during performance test: {e}')
-    # Don't fail the build for performance issues in staging
     print('Continuing with deployment...')
-                            "
+EOF
+                            
+                            python performance_test.py
                         '''
                     }
                 }
