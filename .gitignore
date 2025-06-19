@@ -1,0 +1,4 @@
+# Add to .gitignore:
+data/raw/       # Large datasets
+models/*.pkl    # Trained models
+*.ipynb_checkpoints

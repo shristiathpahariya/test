@@ -1,0 +1,27 @@
+# Core Libraries
+pandas
+numpy
+scikit-learn
+joblib
+
+# Text Preprocessing
+nltk
+textblob
+
+# Optional: Deep learning (if needed)
+tensorflow
+
+# Visualization (EDA / debugging)
+matplotlib
+seaborn
+
+# Jupyter (for .ipynb notebooks)
+jupyter
+notebook
+
+# Testing
+pytest
+pytest-cov
+
+# Coverage reporting for Jenkins
+coverage

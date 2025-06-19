@@ -1,0 +1,170 @@
+name: Scheduled Model Retraining
+
+on:
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: 'Force retrain even if data unchanged'
+        required: false
+        default: 'false'
+      data_source:
+        description: 'Data source path'
+        required: false
+        default: 'data/sentimentdataset.csv'
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Check data freshness
+      id: data-check
+      run: |
+        # Check if data has changed since last training
+        DATA_HASH=$(sha256sum data/sentimentdataset.csv | cut -d' ' -f1)
+        echo "data_hash=$DATA_HASH" >> $GITHUB_OUTPUT
+        
+        # You can store the last hash in GitHub secrets or a file
+        # For now, we'll always retrain if force_retrain is true
+        if [ "${{ github.event.inputs.force_retrain }}" = "true" ]; then
+          echo "should_retrain=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_retrain=true" >> $GITHUB_OUTPUT  # Always retrain for now
+        fi
+    
+    - name: Retrain model
+      if: steps.data-check.outputs.should_retrain == 'true'
+      run: |
+        python -c "
+        import pandas as pd
+        import string
+        from sklearn.model_selection import train_test_split, GridSearchCV
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.metrics import classification_report, accuracy_score
+        import joblib
+        import os
+        import json
+        
+        # Clean text function
+        def clean_text(text):
+            text = str(text).lower()
+            text = text.translate(str.maketrans('', '', string.punctuation))
+            return text
+        
+        # Load and process data
+        data = pd.read_csv('data/sentimentdataset.csv')
+        data.columns = data.columns.str.strip()
+        data = data.dropna(subset=['Text', 'Sentiment'])
+        data['Text'] = data['Text'].apply(clean_text)
+        
+        X = data['Text']
+        y = data['Sentiment']
+        
+        # Filter classes
+        min_samples = 5
+        class_counts = y.value_counts()
+        valid_classes = class_counts[class_counts >= min_samples].index
+        mask = y.isin(valid_classes)
+        X = X[mask]
+        y = y[mask]
+        
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=35, random_state=42, stratify=y
+        )
+        
+        # Vectorize
+        vectorizer = TfidfVectorizer(ngram_range=(1,2), min_df=2, max_df=0.95)
+        X_train_vec = vectorizer.fit_transform(X_train)
+        X_test_vec = vectorizer.transform(X_test)
+        
+        # Train model with basic params for CI/CD speed
+        model = RandomForestClassifier(n_estimators=50, random_state=42, class_weight='balanced')
+        model.fit(X_train_vec, y_train)
+        
+        # Evaluate
+        y_pred = model.predict(X_test_vec)
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        # Save model and metrics
+        os.makedirs('model', exist_ok=True)
+        joblib.dump(model, 'model/model.pkl')
+        joblib.dump(vectorizer, 'model/vectorizer.pkl')
+        
+        # Save metrics
+        metrics = {
+            'accuracy': float(accuracy),
+            'test_samples': len(y_test),
+            'classes': list(y.unique())
+        }
+        
+        with open('model/metrics.json', 'w') as f:
+            json.dump(metrics, f, indent=2)
+        
+        print(f'Model retrained with accuracy: {accuracy:.4f}')
+        "
+    
+    - name: Validate new model
+      if: steps.data-check.outputs.should_retrain == 'true'
+      run: |
+        python -c "
+        import joblib
+        import json
+        import os
+        from src.predict import predict_sentiment, load_model
+        
+        # Load new model and check basic functionality
+        model = load_model('model/model.pkl')
+        vectorizer = load_model('model/vectorizer.pkl')
+        
+        # Test prediction
+        test_text = 'This is a great product!'
+        prediction = predict_sentiment(model, vectorizer, test_text)
+        
+        print(f'Test prediction: {prediction}')
+        
+        # Check metrics
+        if os.path.exists('model/metrics.json'):
+            with open('model/metrics.json', 'r') as f:
+                metrics = json.load(f)
+            print(f'Model metrics: {metrics}')
+            
+            # Validate minimum performance
+            if 'accuracy' in metrics:
+                assert metrics['accuracy'] > 0.6, f'Model accuracy too low: {metrics[\"accuracy\"]}'
+        
+        print('Model validation passed!')
+        "
+    
+    - name: Commit new model
+      if: steps.data-check.outputs.should_retrain == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add model/
+        git commit -m "Automated model retraining - $(date '+%Y-%m-%d %H:%M:%S')" || exit 0
+        git push
+    
+    - name: Trigger Jenkins deployment
+      if: steps.data-check.outputs.should_retrain == 'true'
+      run: |
+        curl -X POST "${{ secrets.JENKINS_URL }}/job/sentiment-model-deploy/build" \
+          --user "${{ secrets.JENKINS_USER }}:${{ secrets.JENKINS_TOKEN }}" \
+          --data-urlencode "MODEL_VERSION=${{ github.sha }}" \
+          --data-urlencode "DATA_HASH=${{ steps.data-check.outputs.data_hash }}"

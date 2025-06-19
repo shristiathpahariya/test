@@ -1,0 +1,133 @@
+name: Test Sentiment Model
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8 black
+    
+    - name: Code formatting check
+      run: |
+        black --check src/ tests/
+        flake8 src/ tests/ --max-line-length=88
+    
+    - name: Data validation
+      run: |
+        python -c "
+        import pandas as pd
+        import os
+        
+        # Check if dataset exists and has required columns
+        df = pd.read_csv('data/sentimentdataset.csv')
+        df.columns = df.columns.str.strip()  # Clean column names
+        required_cols = ['Text', 'Sentiment']  # Your actual column names
+        
+        for col in required_cols:
+            assert col in df.columns, f'Missing column: {col}'
+        
+        print(f'Dataset validation passed: {len(df)} rows, {len(df.columns)} columns')
+        print(f'Sentiment distribution:\n{df.Sentiment.value_counts()}')
+        "
+    
+    - name: Model training test
+      run: |
+        python -c "
+        import sys
+        sys.path.append('.')
+        from src.model_training import clean_text
+        from src.data_preprocessing import load_data, preprocess_data
+        
+        # Test data loading
+        data = load_data('data/sentimentdataset.csv')
+        print(f'Data loaded: {len(data)} rows')
+        
+        # Test text cleaning
+        sample_text = 'This is AMAZING!!! @user #hashtag http://example.com'
+        cleaned = clean_text(sample_text)
+        print(f'Text cleaning works: {cleaned}')
+        "
+    
+    - name: Prediction tests
+      run: |
+        pytest tests/ -v --cov=src/ --cov-report=xml
+    
+    - name: Model performance validation
+      run: |
+        python -c "
+        import pickle
+        import pandas as pd
+        from sklearn.metrics import accuracy_score, classification_report
+        from src.predict import predict_sentiment
+        
+        # Load test data (you can create a small test set)
+        test_texts = [
+            'I love this product, it is amazing!',
+            'This is terrible, worst experience ever',
+            'It is okay, nothing special',
+            'Absolutely fantastic, highly recommend!'
+        ]
+        expected = ['positive', 'negative', 'neutral', 'positive']
+        
+        predictions = [predict_sentiment(text) for text in test_texts]
+        print('Test predictions:', predictions)
+        
+        # Basic sanity checks
+        assert len(predictions) == len(test_texts)
+        assert all(pred in ['positive', 'negative', 'neutral'] for pred in predictions)
+        print('Model validation passed!')
+        "
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install security tools
+      run: |
+        pip install safety bandit
+    
+    - name: Check dependencies for vulnerabilities
+      run: |
+        safety check -r requirements.txt
+    
+    - name: Run bandit security scan
+      run: |
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/
