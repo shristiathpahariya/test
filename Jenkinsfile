@@ -19,6 +19,29 @@ pipeline {
             }
         }
 
+    stage('Debug Shell') {
+    when {
+        expression { return true } // set to false later
+    }
+    steps {
+        script {
+            docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
+                sh '''
+                    echo "🔍 Listing files:"
+                    ls -la src/
+
+                    echo "🔍 Checking file encoding:"
+                    file src/predict.py || true
+
+                    echo "🔍 Dumping hex of predict.py:"
+                    hexdump -C src/predict.py | head -n 20 || true
+                '''
+            }
+        }
+    }
+}
+
+
         stage('Model Validation') {
             steps {
                 script {
