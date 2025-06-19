@@ -102,8 +102,8 @@ EOF
         stage('Build Docker Image') {
             steps {
                 script {
-                    def image = docker.build("sentiment-analyzer:${params.MODEL_VERSION}")
-                    docker.withRegistry('https://registry.hub.docker.com', 'shristi') {
+                    docker.build("shedocks/sentiment-analyzer:${params.MODEL_VERSION}")
+                    docker.withRegistry('https://index.docker.io/v1/', 'shristi') {
                         image.push("${params.MODEL_VERSION}")
                         image.push("latest")
                     }
