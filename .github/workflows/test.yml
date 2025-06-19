@@ -80,7 +80,7 @@ jobs:
     
     - name: Prediction tests
       run: |
-        PYTHONPATH=src pytest tests/ -v --cov=src/ --cov-report=xml
+        PYTHONPATH=$(pwd) pytest tests/ -v --cov=src/ --cov-report=xml
     
     - name: Model performance validation
       run: |
