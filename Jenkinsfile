@@ -22,8 +22,10 @@ pipeline {
         stage('Model Validation') {
             steps {
                 script {
-                    sh '''
-                        python -c "
+                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
+                        sh '''
+                            pip install joblib scikit-learn
+                            python -c "
 import joblib, os
 from src.predict import load_model, predict_sentiment
 
