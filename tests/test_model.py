@@ -1,5 +1,4 @@
 import pytest
-import joblib
 import os
 from src.predict import predict_sentiment, load_model
 
