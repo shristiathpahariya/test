@@ -1,154 +1,123 @@
 pipeline {
     agent any
-
+    
     environment {
-        DOCKER_REGISTRY = credentials('shristi')
-        MODEL_BUCKET = 's3://your-model-bucket'
+        DOCKER_REGISTRY = 'shristi'
+        MODEL_BUCKET = 'your-model-bucket'
+        DATA_BUCKET = 'your-data-bucket'
     }
-
-    parameters {
-        string(name: 'MODEL_VERSION', defaultValue: 'latest', description: 'Model version to deploy')
-        choice(name: 'ENVIRONMENT', choices: ['staging', 'production'], description: 'Deployment environment')
-        booleanParam(name: 'RUN_PERFORMANCE_TEST', defaultValue: true, description: 'Run performance tests')
+    
+    triggers {
+        // Retrain weekly
+        cron('0 2 * * 0')
+        // Trigger on data changes
+        upstream(upstreamProjects: 'data-pipeline', threshold: hudson.model.Result.SUCCESS)
     }
-
+    
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        stage('Model Validation') {
+        stage('Data Validation') {
             steps {
                 script {
-                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
+                    docker.image("${DOCKER_REGISTRY}/ml-training:latest").inside {
                         sh '''
-                            pip install joblib scikit-learn
-                            python validate_model.py
+                            python scripts/validate_data.py \
+                                --data-path ${DATA_BUCKET}/latest \
+                                --schema-path config/data_schema.json
                         '''
                     }
                 }
             }
         }
-
-        stage('Performance Testing') {
-    when {
-        expression { params.RUN_PERFORMANCE_TEST }
-    }
-    steps {
-        script {
-            docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
-                sh '''
-                    pip install joblib scikit-learn
-
-                    cat > performance_test.py << 'EOF'
-import time
-import sys
-sys.path.append('/workspace')
-
-try:
-    from src.predict import predict_sentiment, load_model
-
-    model = load_model('model/model.pkl')
-    vectorizer = load_model('model/vectorizer.pkl')
-
-    test_texts = ['Great product!'] * 50
-
-    start_time = time.time()
-    for text in test_texts:
-        predict_sentiment(model, vectorizer, text)
-    end_time = time.time()
-
-    avg_time = (end_time - start_time) / len(test_texts)
-    print(f'Average prediction time: {avg_time:.4f}s')
-
-    if avg_time >= 0.2:
-        print(f'Warning: Performance is slower than expected: {avg_time}s')
-    else:
-        print('Performance test passed!')
-except ImportError as e:
-    print(f'Warning: Could not import prediction modules - {e}')
-    print('Skipping performance test')
-except Exception as e:
-    print(f'Error during performance test: {e}')
-    print('Continuing with deployment...')
-EOF
-
-                    python performance_test.py
-                '''
-            }
-        }
-    }
-}
-
-        stage('Build Docker Image') {
+        
+        stage('Model Training') {
             steps {
                 script {
-                    def image = docker.build("sentiment-analyzer:${params.MODEL_VERSION}")
-                    docker.withRegistry('https://registry.hub.docker.com', 'shristi') {
-                        image.push("${params.MODEL_VERSION}")
-                        image.push("latest")
+                    docker.image("${DOCKER_REGISTRY}/ml-training:latest").inside {
+                        sh '''
+                            python scripts/train_model.py \
+                                --data-path ${DATA_BUCKET}/latest \
+                                --output-path models/new_model \
+                                --config config/training_config.yaml
+                        '''
                     }
                 }
             }
         }
-
-        stage('Deploy to Staging') {
+        
+        stage('Model Validation') {
+            steps {
+                script {
+                    docker.image("${DOCKER_REGISTRY}/ml-training:latest").inside {
+                        sh '''
+                            python scripts/validate_model.py \
+                                --model-path models/new_model \
+                                --test-data ${DATA_BUCKET}/test \
+                                --baseline-metrics models/current/metrics.json
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('A/B Testing Setup') {
             when {
-                expression { params.ENVIRONMENT == 'staging' }
+                expression { 
+                    return env.MODEL_VALIDATION_PASSED == 'true' 
+                }
             }
             steps {
                 script {
+                    // Deploy to staging for A/B testing
                     sh '''
-                        docker run -d --name sentiment-staging-${BUILD_NUMBER} \
-                            -p 8001:8000 \
-                            sentiment-analyzer:${MODEL_VERSION}
-
-                        sleep 10
-
-                        if docker ps | grep -q sentiment-staging-${BUILD_NUMBER}; then
-                            echo "✅ Staging container is running successfully"
-                            docker exec sentiment-staging-${BUILD_NUMBER} python -c "print('Container health check passed')" || echo "Warning: Python health check failed but container is running"
-                        else
-                            echo "❌ Staging container failed to start"
-                            exit 1
-                        fi
+                        docker build -t ${DOCKER_REGISTRY}/ml-api:staging-${BUILD_NUMBER} \
+                            --build-arg MODEL_PATH=models/new_model .
+                        docker push ${DOCKER_REGISTRY}/ml-api:staging-${BUILD_NUMBER}
+                    '''
+                    
+                    // Update staging deployment
+                    sh '''
+                        kubectl set image deployment/ml-api-staging \
+                            ml-api=${DOCKER_REGISTRY}/ml-api:staging-${BUILD_NUMBER} \
+                            --namespace=staging
                     '''
                 }
             }
         }
-
-        stage('Deploy to Production') {
+        
+        stage('Production Deployment') {
             when {
-                expression { params.ENVIRONMENT == 'production' }
+                expression { 
+                    return env.AB_TEST_PASSED == 'true' 
+                }
             }
             steps {
                 script {
+                    // Blue-green deployment
                     sh '''
-                        docker stop sentiment-production || true
-                        docker rm sentiment-production || true
-
-                        docker run -d --name sentiment-production \
-                            --restart unless-stopped \
-                            -p 8000:8000 \
-                            sentiment-analyzer:${MODEL_VERSION}
-
-                        sleep 15
-
-                        if docker ps | grep -q sentiment-production; then
-                            echo "✅ Production container is running successfully"
-                            docker exec sentiment-production python -c "print('Production health check passed')" || echo "Warning: Python health check failed but container is running"
-                        else
-                            echo "❌ Production container failed to start"
-                            exit 1
-                        fi
+                        # Build production image
+                        docker build -t ${DOCKER_REGISTRY}/ml-api:prod-${BUILD_NUMBER} \
+                            --build-arg MODEL_PATH=models/new_model .
+                        docker push ${DOCKER_REGISTRY}/ml-api:prod-${BUILD_NUMBER}
+                        
+                        # Update blue environment
+                        kubectl set image deployment/ml-api-blue \
+                            ml-api=${DOCKER_REGISTRY}/ml-api:prod-${BUILD_NUMBER} \
+                            --namespace=production
+                        
+                        # Health check
+                        kubectl rollout status deployment/ml-api-blue --namespace=production
+                        
+                        # Switch traffic
+                        kubectl patch service ml-api-service \
+                            -p '{"spec":{"selector":{"version":"blue"}}}' \
+                            --namespace=production
                     '''
                 }
             }
         }
     }
-
+    
+    post {
     post {
         success {
             echo "✅ Sentiment Model Deployment Succeeded - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}"
@@ -160,4 +129,11 @@ EOF
             script {
                 node {
                     sh '''
-                        docker stop senti
+                        docker stop sentiment-staging-${BUILD_NUMBER} || true
+                        docker rm sentiment-staging-${BUILD_NUMBER} || true
+                    '''
+                }
+            }
+        }
+    }
+}
