@@ -125,18 +125,22 @@ EOF
         }
 
         stage('Deploy to Production') {
-            when {
-                expression { params.ENVIRONMENT == 'production' }
-            }
-            steps {
-                sh '''
-                    docker stop sentiment-production || true
-                    docker rm sentiment-production || true
+    when {
+        expression { params.ENVIRONMENT == 'production' }
+    }
+    steps {
+        sh """
+            docker stop sentiment-production || true
+            docker rm sentiment-production || true
 
-                    docker run -d --name sentiment-production --restart unless-stopped -p 8000:8000 sentiment-analyzer:${MODEL_VERSION}
-                    sleep 15
+            docker run -d --name sentiment-production --restart unless-stopped -p 8000:8000 sentiment-analyzer:${MODEL_VERSION}
+            sleep 15
 
-                    docker exec sentiment-production ./venv/bin/python -c "
+            docker exec sentiment-production python3 -c "from src.predict import predict_sentiment, load_model; model = load_model('model/model.pkl'); vectorizer = load_model('model/vectorizer.pkl'); result = predict_sentiment(model, vectorizer, 'Amazing service!'); print('Production health check:', result)"
+        """
+    }
+}
+
 from src.predict import predict_sentiment, load_model
 model = load_model('model/model.pkl')
 vectorizer = load_model('model/vectorizer.pkl')
