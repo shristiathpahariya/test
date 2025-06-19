@@ -33,16 +33,16 @@ pipeline {
         }
 
         stage('Performance Testing') {
-            when {
-                expression { params.RUN_PERFORMANCE_TEST }
-            }
-            steps {
-                script {
-                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
-                        sh '''
-                            pip install joblib scikit-learn
+    when {
+        expression { params.RUN_PERFORMANCE_TEST }
+    }
+    steps {
+        script {
+            docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
+                sh '''
+                    pip install joblib scikit-learn
 
-                            cat > performance_test.py << 'EOF'
+                    cat > performance_test.py << 'EOF'
 import time
 import sys
 sys.path.append('/workspace')
@@ -75,12 +75,12 @@ except Exception as e:
     print('Continuing with deployment...')
 EOF
 
-                            python performance_test.py
-                        '''
-                    }
-                }
+                    python performance_test.py
+                '''
             }
         }
+    }
+}
 
         stage('Build Docker Image') {
             steps {
