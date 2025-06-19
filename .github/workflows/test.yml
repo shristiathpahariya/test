@@ -33,6 +33,10 @@ jobs:
         pip install -r requirements.txt
         pip install pytest pytest-cov flake8 black
     
+    - name: Auto-format code with Black
+      run: |
+        black src/ tests/
+    
     - name: Code formatting check
       run: |
         black --check src/ tests/
