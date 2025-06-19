@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = credentials('docker-registry')
+        DOCKER_REGISTRY = credentials('shristi')
         MODEL_BUCKET = 's3://your-model-bucket'
     }
 
