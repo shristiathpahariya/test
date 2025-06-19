@@ -35,7 +35,7 @@ jobs:
     
     - name: Auto-format code with Black
       run: |
-        black src/ tests/
+        black src/ tests/ --exclude src/__init__.py
     
     - name: Code formatting check
       run: |
