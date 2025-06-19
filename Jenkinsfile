@@ -23,7 +23,7 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        python -c "
+                        python3 -c "
 import joblib
 import os
 from src.predict import load_model, predict_sentiment
@@ -53,7 +53,7 @@ print('Validation passed!')
             steps {
                 script {
                     sh '''
-                        python -c "
+                        python3 -c "
 import time
 from src.predict import predict_sentiment, load_model
 
@@ -97,7 +97,7 @@ assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
                     sh '''
 docker run -d --name sentiment-staging-${BUILD_NUMBER} -p 8001:8000 sentiment-analyzer:${MODEL_VERSION}
 sleep 10
-docker exec sentiment-staging-${BUILD_NUMBER} python -c "from src.predict import predict_sentiment; print('Health check:', predict_sentiment('test'))"
+docker exec sentiment-staging-${BUILD_NUMBER} python3 -c "from src.predict import predict_sentiment; print('Health check:', predict_sentiment('test'))"
                     '''
                 }
             }
@@ -116,7 +116,7 @@ docker rm sentiment-production || true
 docker run -d --name sentiment-production --restart unless-stopped -p 8000:8000 sentiment-analyzer:${MODEL_VERSION}
 sleep 15
 
-docker exec sentiment-production python -c "
+docker exec sentiment-production python3 -c "
 from src.predict import predict_sentiment, load_model
 model = load_model('model/model.pkl')
 vectorizer = load_model('model/vectorizer.pkl')
