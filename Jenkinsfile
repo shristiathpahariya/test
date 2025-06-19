@@ -123,6 +123,7 @@ EOF
                 '''
             }
         }
+    }
 
        stage('Deploy to Production') {
     when {
