@@ -19,6 +19,16 @@ pipeline {
             }
         }
 
+    stage('Install pip3') {
+    steps {
+        sh '''
+            apt-get update
+            apt-get install -y python3-pip
+        '''
+    }
+}
+
+
     stage('Install Dependencies') {
     steps {
         sh 'pip3 install -r requirements.txt'
