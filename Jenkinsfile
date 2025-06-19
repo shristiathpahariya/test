@@ -21,25 +21,6 @@ pipeline {
             }
         }
 
-        stage('Check src/__init__.py for Null Bytes') {
-    steps {
-        sh '''
-            cat > check_null_bytes.py <<EOF
-with open('src/__init__.py', 'rb') as f:
-    content = f.read()
-
-if b'\\x00' in content:
-    print('Null byte found in src/__init__.py')
-else:
-    print('No null bytes found')
-EOF
-
-            python3 check_null_bytes.py
-        '''
-    }
-}
-
-
         stage('Install pip & venv') {
             steps {
                 sh '''
