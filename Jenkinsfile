@@ -141,7 +141,7 @@ assert avg_time < 0.2, f'Performance too slow: {avg_time}s'
             echo "❌ Sentiment Model Deployment Failed - Environment: ${params.ENVIRONMENT}, Build: ${BUILD_NUMBER}. Check build logs for details."
         }
         cleanup {
-            node {
+            script {
                 sh '''
                     docker stop sentiment-staging-${BUILD_NUMBER} || true
                     docker rm sentiment-staging-${BUILD_NUMBER} || true
