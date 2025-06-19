@@ -19,36 +19,30 @@ pipeline {
             }
         }
 
-    stage('Debug Shell') {
-    when {
-        expression { return true } // set to false later
-    }
+        stage('Debug Shell') {
+            steps {
+                script {
+                    docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
+                        sh '''
+                            apt-get update && apt-get install -y file bsdmainutils
 
-    stage('Debug Shell') {
-    when {
-        expression { return true } // Disable later when done debugging
-    }
-    steps {
-        script {
-            docker.image('python:3.9-slim').inside('-v ${PWD}:/workspace -w /workspace') {
-                sh '''
-                    apt-get update && apt-get install -y file bsdmainutils
+                            echo "🔍 Listing files in src/"
+                            ls -la src/
 
-                    echo "🔍 Listing files:"
-                    ls -la src/
+                            echo "🔍 Checking file encoding:"
+                            file src/predict.py || true
 
-                    echo "🔍 Checking file encoding:"
-                    file src/predict.py || true
+                            echo "🔍 Dumping hex of predict.py (first 20 lines):"
+                            hexdump -C src/predict.py | head -n 20 || true
 
-                    echo "🔍 Dumping hex of predict.py (first 20 lines):"
-                    hexdump -C src/predict.py | head -n 20 || true
-                '''
+                            echo "🧼 Auto-cleaning null bytes if any"
+                            tr < src/predict.py -d '\\000' > clean_predict.py
+                            mv clean_predict.py src/predict.py
+                        '''
+                    }
+                }
             }
         }
-    }
-}
-
-
 
         stage('Model Validation') {
             steps {
