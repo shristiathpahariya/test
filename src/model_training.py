@@ -17,7 +17,7 @@ def clean_text(text):
 
 # Load data
 data = pd.read_csv(
-    r"D:\Esewa project\sentiment-analysis-project\data\sentimentdataset.csv"
+    r"data\sentimentdataset.csv"
 )
 data.columns = data.columns.str.strip()
 data = data.dropna(subset=["Text", "Sentiment"])
@@ -69,9 +69,9 @@ model = grid.best_estimator_
 
 # Save model and vectorizer
 os.makedirs(r"d:/Esewa project/sentiment-analysis-project/model", exist_ok=True)
-joblib.dump(model, r"d:/Esewa project/sentiment-analysis-project/model/model.pkl")
+joblib.dump(model, r"/model/model.pkl")
 joblib.dump(
-    vectorizer, r"d:/Esewa project/sentiment-analysis-project/model/vectorizer.pkl"
+    vectorizer, r"/model/vectorizer.pkl"
 )
 
 # Evaluate
